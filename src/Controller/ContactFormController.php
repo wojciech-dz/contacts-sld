@@ -11,74 +11,65 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 class ContactFormController extends AbstractController
 {
-    #[Route('/contactform', name: 'create_contact_form')]
-    public function createContactForm(Request $request, EntityManagerInterface $entityManager, ValidatorInterface $validator): JsonResponse
-    {
-        $contactForm = new ContactForm();
-        $contactForm->setName('Janko');
-        $contactForm->setSurName('Muzykant');
-        $contactForm->setEmail('janko.muzykant@tempmail.temp');
-        $contactForm->setContents('Polecam się na przyszłość i pozdrawiam gorąco.');
+    private $entityManager;
 
-        $errors = $validator->validate($contactForm);
-        if (count($errors) > 0) {
-            dd($errors);
+    public function __construct(EntityManagerInterface $entityManager) 
+    {
+        $this->entityManager = $entityManager; 
+    }
+
+    #[Route('/contactform', name: 'create_contact_form')]
+    public function createContactForm(Request $request): JsonResponse
+    {
+        $params = $request->getPayload()->all();
+        if (!$this->validateContactFormData($params)) {
             return $this->json([
-                'message' => 'Niestety, przy próbie zapisu wystąpiły błędy.',
-                'errors' =>  $errors,
                 'success' => false,
+                'message' => 'Niestety, przy próbie zapisu wystąpiły błędy.',
             ]);
         }
 
-        $entityManager->persist($contactForm);
-        $entityManager->flush();
-
+        $contactForm = $this->saveContactFormData($params);
         return $this->json([
             'message' => 'Dane z formularza zostały poprawnie zapisane!',
-            'contact_form' => [
-                $contactForm->getName(), 
-                $contactForm->getSurname(), 
-                $contactForm->getEmail(), 
-                $contactForm->getContents()
-            ],
+            'name' => $contactForm->getName(), 
+            'surname' => $contactForm->getSurname(), 
+            'email' => $contactForm->getEmail(), 
+            'contents' => $contactForm->getContents()
         ]);
     }
 
-    #[Route('/contactforms', name: 'contact_form_list')]
-    public function list(ContactFormRepository $contactFormRepository): JsonResponse
+    protected function validateContactFormData(array $params): bool
     {
-        $contactForms = $contactFormRepository->findAll();
-
-        if (!$contactForms) {
-            throw $this->createNotFoundException(
-                'Brak danych w bazie'
-            );
+        if (empty($params)) {
+            return false;
+        }
+        foreach (['name', 'surname', 'email', 'contents'] as $key) {
+            if (!array_key_exists('name', $params) || empty($params[$key])) {
+                return false;
+            }
+        }
+        if (!filter_var($params['email'], FILTER_VALIDATE_EMAIL)) {
+            return false;
         }
 
-        return $this->json([
-            'success' => true,
-            'contact_forms' => $contactForms,
-        ]);
+        return true;
     }
 
-    #[Route('/arrlist', name: 'contact_form_array')]
-    public function arraylist(ContactFormRepository $contactFormRepository): JsonResponse
+    protected function saveContactFormData($params) 
     {
-        $contactForms = $contactFormRepository->findAll();
+        $contactForm = new ContactForm();
+        $contactForm->setName($params['name']);
+        $contactForm->setSurName($params['surname']);
+        $contactForm->setEmail($params['email']);
+        $contactForm->setContents($params['contents']);
 
-        if (!$contactForms) {
-            throw $this->createNotFoundException(
-                'Brak danych w bazie'
-            );
-        }
+        $this->entityManager->persist($contactForm);
+        $this->entityManager->flush();
 
-        return new JsonResponse([
-            'success' => true,
-            'contact_forms' => json_encode(json_decode($contactForms), true),
-        ]);
+        return $contactForm;
     }
 }
